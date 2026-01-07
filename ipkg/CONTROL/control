@@ -1,0 +1,10 @@
+Package: com.starkka.pcsxrearmed
+Version: 1.0.7
+Architecture: armv7
+Maintainer: starkka
+Section: Games
+Priority: optional
+Description: PCSX ReARMed - PlayStation 1 Emulator with Touch Controls
+ Built with Linaro GCC 4.8 for webOS TouchPad.
+ Features: On-screen touch controls, multitouch support, YUV overlay rendering.
+ Data path: /media/internal/.pcsx/

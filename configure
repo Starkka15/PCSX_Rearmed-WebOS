@@ -458,7 +458,7 @@ EOF
 MAIN_LDLIBS="$MAIN_LDLIBS -lz"
 check_zlib || fail "please install zlib (libz-dev)"
 
-MAIN_LDLIBS="-lpng $MAIN_LDLIBS"
+MAIN_LDLIBS="-lpng12 $MAIN_LDLIBS"
 check_libpng || fail "please install libpng (libpng-dev)"
 
 # find what audio support we can compile

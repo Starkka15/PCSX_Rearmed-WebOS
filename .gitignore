@@ -32,3 +32,12 @@ psx_gpu_offsets_update
 /bios/
 /old/
 /a/
+.aider*
+
+# webOS build artifacts
+*.ipk
+build*.log
+ipkg-debug/
+.claude/
+Claude.md
+sdl-config

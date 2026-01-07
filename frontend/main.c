@@ -500,7 +500,10 @@ void emu_core_ask_exit(void)
 
 static const char *get_home_dir(void)
 {
-#if defined(PANDORA) || !defined(__unix__) || defined(MIYOO)
+#ifdef WEBOS_TOUCHPAD
+	// webOS: PCSX_DOT_DIR is already absolute path
+	return "";
+#elif defined(PANDORA) || !defined(__unix__) || defined(MIYOO)
 	return ".";
 #else
 	static const char *home = NULL;

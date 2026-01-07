@@ -86,8 +86,9 @@ sthread_t *pcsxr_sthread_create(void (*thread_func)(void *),
 	h->id = (pthread_t)ctr_thread;
 #else
 	h = sthread_create(thread_func, NULL);
- #if defined(__GLIBC__) || \
-    (defined(__ANDROID_API__) && __ANDROID_API__ >= 26)
+ #if (defined(__GLIBC__) || \
+    (defined(__ANDROID_API__) && __ANDROID_API__ >= 26)) && \
+    !defined(WEBOS_TOUCHPAD)
 	if (h && (unsigned int)type < (unsigned int)PCSXRT_COUNT)
 	{
 		const char * const pcsxr_tnames[PCSXRT_COUNT] = {

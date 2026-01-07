@@ -1,0 +1,10 @@
+{
+	"title": "PCSX ReARMed",
+	"id": "com.starkka.pcsxrearmed",
+	"version": "1.0.7",
+	"vendor": "starkka",
+	"type": "pdk",
+	"main": "pcsx",
+	"icon": "icon.png",
+	"uiRevision": 2
+}

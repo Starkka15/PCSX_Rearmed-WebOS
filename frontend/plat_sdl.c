@@ -246,6 +246,11 @@ void plat_init(void)
   }
 
   in_sdl_init(&in_sdl_platform_data, sdl_event_handler);
+#ifdef WEBOS_TOUCHPAD
+  // Initialize webOS touch controls
+  extern void in_webos_touch_init(void);
+  in_webos_touch_init();
+#endif
   in_probe();
   pl_rearmed_cbs.only_16bpp = 1;
   pl_rearmed_cbs.pl_get_layer_pos = get_layer_pos;
@@ -672,6 +677,11 @@ void *plat_gvideo_flip(void)
       (plat_sdl_screen->h - g_layer_h) / 2,
       g_layer_w, g_layer_h
     };
+#ifdef WEBOS_TOUCHPAD
+    // Draw touch controls on YUV overlay (before display)
+    extern void in_webos_touch_draw_overlay_yuv(SDL_Overlay *overlay, int dest_w, int dest_h);
+    in_webos_touch_draw_overlay_yuv(plat_sdl_overlay, plat_sdl_overlay->w, plat_sdl_overlay->h);
+#endif
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
   }
   else if (plat_sdl_gl_active) {
@@ -685,8 +695,15 @@ void *plat_gvideo_flip(void)
     forced_flips--;
     do_flip |= 1;
   }
-  if (do_flip)
+  if (do_flip) {
+#ifdef WEBOS_TOUCHPAD
+    // Draw on-screen touch controls (for non-overlay mode)
+    extern void in_webos_touch_draw_overlay(SDL_Surface *screen);
+    if (plat_sdl_screen)
+      in_webos_touch_draw_overlay(plat_sdl_screen);
+#endif
     SDL_Flip(plat_sdl_screen);
+  }
   handle_window_resize();
   if (do_flip) {
     if (forced_clears > 0) {
@@ -761,6 +778,10 @@ void plat_video_menu_begin(void)
   g_menuscreen_ptr = shadow_fb;
 }
 
+#ifdef WEBOS_TOUCHPAD
+extern void in_webos_touch_draw_overlay_yuv(SDL_Overlay *overlay, int dest_w, int dest_h);
+#endif
+
 void plat_video_menu_end(void)
 {
   int do_flip = 0;
@@ -776,6 +797,12 @@ void plat_video_menu_end(void)
     rgb565_to_uyvy(plat_sdl_overlay->pixels[0], shadow_fb,
       g_menuscreen_w * g_menuscreen_h);
     SDL_UnlockYUVOverlay(plat_sdl_overlay);
+
+#ifdef WEBOS_TOUCHPAD
+    // Draw touch overlay on menu screen
+    in_webos_touch_draw_overlay_yuv(plat_sdl_overlay,
+      plat_sdl_overlay->w, plat_sdl_overlay->h);
+#endif
 
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
   }

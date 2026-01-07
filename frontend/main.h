@@ -22,7 +22,11 @@
 #include <stdlib.h>
 #include "config.h"
 
+#ifdef WEBOS_TOUCHPAD
+#define PCSX_DOT_DIR "/media/internal/.pcsx/"
+#else
 #define PCSX_DOT_DIR "/.pcsx/"
+#endif
 #define DEFAULT_MEM_CARD_1 PCSX_DOT_DIR "memcards/card1.mcd"
 #define DEFAULT_MEM_CARD_2 PCSX_DOT_DIR "memcards/card2.mcd"
 #define MEMCARD_DIR        PCSX_DOT_DIR "memcards/"
