@@ -488,9 +488,9 @@ endif
 OBJS += frontend/main.o frontend/plugin.o
 frontend/main.o libpcsxcore/misc.o: CFLAGS += -DBUILTIN_GPU=$(BUILTIN_GPU)
 
-# webOS TouchPad on-screen controls
+# webOS TouchPad on-screen controls and OpenGL ES 2.0
 ifneq (,$(findstring WEBOS_TOUCHPAD,$(CFLAGS)))
-OBJS += frontend/in_webos_touch.o
+OBJS += frontend/in_webos_touch.o frontend/gl_webos.o
 endif
 
 frontend/menu.o frontend/main.o: include/revision.h
