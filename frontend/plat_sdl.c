@@ -20,6 +20,9 @@
 #include "libpicofe/plat_sdl.h"
 #include "libpicofe/plat.h"
 #include "libpicofe/gl.h"
+#ifdef WEBOS_TOUCHPAD
+#include "gl_webos.h"
+#endif
 #include "cspace.h"
 #include "plugin_lib.h"
 #include "plugin.h"
@@ -373,7 +376,11 @@ static void gl_finish_pl(void)
 {
   if (plugin_owns_display() && GPU_close != NULL)
     GPU_close();
+#ifdef WEBOS_TOUCHPAD
+  gl_webos_destroy();
+#else
   gl_destroy();
+#endif
 }
 
 static void gl_resize(void)
@@ -381,11 +388,13 @@ static void gl_resize(void)
   int w = in_menu ? g_menuscreen_w : psx_w;
   int h = in_menu ? g_menuscreen_h : psx_h;
 
+#ifndef WEBOS_TOUCHPAD
   gl_quirks &= ~(GL_QUIRK_SCALING_NEAREST | GL_QUIRK_VSYNC_ON);
   if (plat_target.hwfilter) // inverted from plat_sdl_gl_scaling()
     gl_quirks |= GL_QUIRK_SCALING_NEAREST;
   if (g_opts & OPT_VSYNC)
     gl_quirks |= GL_QUIRK_VSYNC_ON;
+#endif
 
   if (plugin_owns_display())
     w = plat_sdl_screen->w, h = plat_sdl_screen->h;
@@ -394,7 +403,11 @@ static void gl_resize(void)
       return;
     gl_finish_pl();
   }
+#ifdef WEBOS_TOUCHPAD
+  plat_sdl_gl_active = (gl_webos_create(w, h) == 0);
+#else
   plat_sdl_gl_active = (gl_create(window, &gl_quirks, w, h) == 0);
+#endif
   if (plat_sdl_gl_active)
     gl_w_prev = w, gl_h_prev = h, gl_quirks_prev = gl_quirks;
   else {
@@ -435,7 +448,11 @@ static void centered_clear(void)
   unsigned short *dst;
 
   if (plat_sdl_gl_active) {
+#ifdef WEBOS_TOUCHPAD
+    gl_webos_clear();
+#else
     gl_clear();
+#endif
     return;
   }
 
@@ -685,7 +702,11 @@ void *plat_gvideo_flip(void)
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
   }
   else if (plat_sdl_gl_active) {
+#ifdef WEBOS_TOUCHPAD
+    gl_webos_flip(shadow_fb, psx_w, psx_h);
+#else
     gl_flip_v(shadow_fb, psx_w, psx_h, g_scaler != SCALE_FULLSCREEN ? gl_vertices : NULL);
+#endif
     ret = shadow_fb;
   }
   else
@@ -807,8 +828,12 @@ void plat_video_menu_end(void)
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
   }
   else if (plat_sdl_gl_active) {
+#ifdef WEBOS_TOUCHPAD
+    gl_webos_flip(g_menuscreen_ptr, g_menuscreen_w, g_menuscreen_h);
+#else
     gl_flip_v(g_menuscreen_ptr, g_menuscreen_w, g_menuscreen_h,
         g_scaler != SCALE_FULLSCREEN ? gl_vertices : NULL);
+#endif
   }
   else {
     centered_blit_menu();

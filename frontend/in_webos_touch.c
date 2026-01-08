@@ -677,3 +677,9 @@ void in_webos_touch_draw_overlay_borders(SDL_Surface *screen,
 		SDL_UnlockSurface(screen);
 	}
 }
+
+// Get current button state (for GL overlay rendering)
+unsigned int in_webos_touch_get_buttons(void)
+{
+	return buttons_pressed;
+}
