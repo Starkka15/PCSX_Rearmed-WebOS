@@ -413,6 +413,30 @@ frontend/main.o frontend/menu.o: CFLAGS += -include frontend/320240/ui_miyoo.h
 USE_PLUGIN_LIB = 1
 USE_FRONTEND = 1
 endif
+ifeq "$(PLATFORM)" "webos"
+# WebOS (Palm/HP TouchPad) with GPU acceleration via SDL OpenGL (not EGL)
+OBJS += frontend/libpicofe/in_sdl.o
+OBJS += frontend/libpicofe/plat_dummy.o
+OBJS += frontend/plat_sdl.o
+OBJS += frontend/plat_webos.o
+# WebOS-specific GL implementation using SDL's GL support (like TuxRacer)
+# This avoids EGL which doesn't work properly on WebOS and causes touch flicker
+OBJS += frontend/libpicofe/gl_webos.o
+frontend/libpicofe/plat_sdl.o: CFLAGS += -DHAVE_GLES -DWEBOS
+frontend/libpicofe/gl_webos.o: CFLAGS += -DHAVE_GLES -DWEBOS
+frontend/plat_sdl.o: CFLAGS += -DHAVE_GLES -DWEBOS
+frontend/plat_webos.o: CFLAGS += -DWEBOS
+frontend/main.o: CFLAGS += -DWEBOS
+frontend/menu.o: CFLAGS += -DHAVE_GLES -DMENU_SHOW_VARSCALER=1
+# Link directly against GLES library (like TuxRacer does)
+LDLIBS += -lGLES_CM
+USE_PLUGIN_LIB = 1
+USE_FRONTEND = 1
+# WebOS devices are ARMv7 with NEON
+HAVE_NEON ?= 1
+HAVE_NEON_ASM ?= 1
+BUILTIN_GPU ?= neon
+endif
 ifeq "$(PLATFORM)" "maemo"
 OBJS += maemo/hildon.o maemo/main.o maemo/maemo_xkb.o frontend/pl_gun_ts.o
 USE_PLUGIN_LIB = 1

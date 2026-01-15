@@ -37,7 +37,7 @@ check_define_val()
 # setting options to "yes" or "no" will make that choice default,
 # "" means "autodetect".
 
-platform_list="generic pandora maemo caanoo miyoo"
+platform_list="generic pandora maemo caanoo miyoo webos"
 platform="generic"
 builtin_gpu_list="neon peops unai"
 dynarec_list="ari64 lightrec none"
@@ -150,6 +150,40 @@ set_platform()
     drc_cache_base="yes"
     optimize_arm926ej="yes"
     need_warm="yes"
+    multithreading="no"
+    ;;
+  webos)
+    # WebOS (Palm/HP TouchPad) - ARMv7 with NEON, OpenGL ES for GPU
+    # Uses Palm PDK for headers and ARM libraries
+    # IMPORTANT: Use Linaro GCC 4.9.4 to produce binaries compatible with TouchPad's glibc 2.8
+    # System arm-linux-gnueabi-gcc (GCC 13+) links against glibc 2.15+ which is NOT available on device
+    LINARO_PATH="/opt/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabi/bin"
+    if [ -d "$LINARO_PATH" ]; then
+      CC="${LINARO_PATH}/arm-linux-gnueabi-gcc"
+      CXX="${LINARO_PATH}/arm-linux-gnueabi-g++"
+      AS="${LINARO_PATH}/arm-linux-gnueabi-as"
+    else
+      echo "WARNING: Linaro toolchain not found at $LINARO_PATH"
+      echo "Build may not run on TouchPad due to glibc version mismatch"
+    fi
+    sound_drivers="sdl"
+    drc_cache_base="yes"
+    have_armv7="yes"
+    have_arm_neon="yes"
+    have_arm_neon_asm="yes"
+    have_neon_gpu="yes"
+    have_gles="yes"
+    # GLES/EGL libraries are loaded dynamically at runtime via dlopen
+    # Include compatibility header and avoid X11 dependencies
+    # Note: webos_compat.h path must work from any directory (plugins build from subdirs)
+    # EGL headers are in include/EGL (custom stubs for WebOS)
+    # Use local SDL headers (with X11 disabled) and EGL stubs
+    # Include compat header for bswap16 fallback
+    CFLAGS="$CFLAGS -march=armv7-a -mfloat-abi=softfp -include ${PWD}/include/webos_compat.h -I${PWD}/include/SDL -I${PWD}/include -I/opt/PalmPDK/include"
+    # Link against Palm PDK libraries, allow unresolved deps that will be found at runtime
+    LDFLAGS="$LDFLAGS -L/opt/PalmPDK/device/lib -Wl,--allow-shlib-undefined"
+    have_sdl="yes"
+    MAIN_LDLIBS="-lSDL -lpng12 $MAIN_LDLIBS"
     multithreading="no"
     ;;
   *)
@@ -455,11 +489,23 @@ EOF
   compile_object "$@"
 }
 
-MAIN_LDLIBS="$MAIN_LDLIBS -lz"
-check_zlib || fail "please install zlib (libz-dev)"
+# zlib check - use bundled for cross-compilation platforms
+if [ "$platform" = "webos" ]; then
+  # WebOS cross-compilation: use bundled zlib from libchdr
+  WANT_ZLIB="yes"
+else
+  MAIN_LDLIBS="$MAIN_LDLIBS -lz"
+  check_zlib || fail "please install zlib (libz-dev)"
+fi
 
-MAIN_LDLIBS="-lpng $MAIN_LDLIBS"
-check_libpng || fail "please install libpng (libpng-dev)"
+# libpng check - optional for webos
+if [ "$platform" = "webos" ]; then
+  # WebOS: libpng not required for basic operation
+  :
+else
+  MAIN_LDLIBS="-lpng $MAIN_LDLIBS"
+  check_libpng || fail "please install libpng (libpng-dev)"
+fi
 
 # find what audio support we can compile
 if [ "x$sound_drivers" = "x" ]; then
@@ -491,11 +537,17 @@ else
 fi
 
 if [ "$need_sdl" = "yes" ]; then
-  which ${SDL_CONFIG} > /dev/null || \
-    fail "sdl-config is missing; please install libsdl (libsdl1.2-dev)"
-  CFLAGS="$CFLAGS `${SDL_CONFIG} --cflags`"
-  MAIN_LDLIBS="`${SDL_CONFIG} --libs` $MAIN_LDLIBS"
-  check_sdl || fail "please install libsdl (libsdl1.2-dev)"
+  if [ "$platform" = "webos" ]; then
+    # WebOS cross-compilation: SDL is on the device, use host headers
+    CFLAGS="$CFLAGS -I/usr/include/SDL"
+    MAIN_LDLIBS="-lSDL $MAIN_LDLIBS"
+  else
+    which ${SDL_CONFIG} > /dev/null || \
+      fail "sdl-config is missing; please install libsdl (libsdl1.2-dev)"
+    CFLAGS="$CFLAGS `${SDL_CONFIG} --cflags`"
+    MAIN_LDLIBS="`${SDL_CONFIG} --libs` $MAIN_LDLIBS"
+    check_sdl || fail "please install libsdl (libsdl1.2-dev)"
+  fi
 fi
 
 # check for tslib (only headers needed)
@@ -529,7 +581,8 @@ EOF
   fi
 fi
 
-# check for GLES headers
+# check for GLES headers (skip if already set by platform, e.g. webos)
+if [ -z "$have_gles" ]; then
 cat > $TMPC <<EOF
 #include <GLES/gl.h>
 #include <EGL/egl.h>
@@ -545,6 +598,7 @@ elif compile_binary $CFLAGS_GLES -lEGL -lGLESv1_CM $LDLIBS_GLES; then
   LDLIBS_GLES="-lEGL -lGLESv1_CM $LDLIBS_GLES"
 elif compile_object $CFLAGS_GLES; then
   have_gles="yes"
+fi
 fi
 
 if check_c64_tools; then
@@ -667,6 +721,9 @@ if [ "$have_gles" = "yes" ]; then
   echo "HAVE_GLES = 1" >> $config_mak
   echo "CFLAGS_GLES = $CFLAGS_GLES" >> $config_mak
   echo "LDLIBS_GLES = $LDLIBS_GLES" >> $config_mak
+fi
+if [ "$WANT_ZLIB" = "yes" ]; then
+  echo "WANT_ZLIB = 1" >> $config_mak
 fi
 if [ "$have_fsections" = "no" ]; then
   echo "NO_FSECTIONS = 1" >> $config_mak

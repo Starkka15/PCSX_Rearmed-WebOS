@@ -137,13 +137,13 @@ if [ "$SKIP_BUILD" -eq 0 ]; then
     make clean 2>/dev/null || true
 
     # Configure for ARM/webOS
-    # webOS devices are ARMv7 with NEON support
-    log_info "Configuring build for ARM/webOS..."
+    # webOS devices are ARMv7 with NEON support and OpenGL ES GPU
+    log_info "Configuring build for ARM/webOS with GPU acceleration..."
 
     CFLAGS="-march=armv7-a -mfpu=neon -mfloat-abi=softfp" \
     CROSS_COMPILE="$CROSS_COMPILE" \
     ./configure \
-        --platform=generic \
+        --platform=webos \
         --gpu=neon \
         --sound-drivers=sdl \
         --enable-neon

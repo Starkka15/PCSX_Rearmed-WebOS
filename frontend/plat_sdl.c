@@ -839,4 +839,20 @@ void plat_minimize(void)
 {
 }
 
+/* Set OpenGL as the video output method (for WebOS GPU acceleration) */
+void plat_sdl_set_gl_default(void)
+{
+  if (vout_mode_gl != -1) {
+    plat_target.vout_method = vout_mode_gl;
+  }
+}
+
+/* Set Video Overlay as the video output method (for WebOS - avoids touch flicker) */
+void plat_sdl_set_overlay_default(void)
+{
+  if (vout_mode_overlay != -1) {
+    plat_target.vout_method = vout_mode_overlay;
+  }
+}
+
 // vim:shiftwidth=2:expandtab

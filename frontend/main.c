@@ -24,6 +24,7 @@
 #include "pcnt.h"
 #include "menu.h"
 #include "plat.h"
+#include "plat_webos.h"
 #include "../libpcsxcore/misc.h"
 #include "../libpcsxcore/cheat.h"
 #include "../libpcsxcore/sio.h"
@@ -502,6 +503,9 @@ static const char *get_home_dir(void)
 {
 #if defined(PANDORA) || !defined(__unix__) || defined(MIYOO)
 	return ".";
+#elif defined(WEBOS)
+	// WebOS: use /media/internal which is user-writable storage
+	return "/media/internal";
 #else
 	static const char *home = NULL;
 	struct stat st;
@@ -588,6 +592,12 @@ int main(int argc, char *argv[])
 	int loadst = 0;
 	int i;
 
+#ifdef WEBOS
+	// WebOS: PDL must be initialized FIRST, before anything else
+	// This lets WebOS control the display buffer and prevents flicker on touch
+	webos_init();
+#endif
+
 	emu_core_preinit();
 
 	// read command line options
@@ -647,6 +657,17 @@ int main(int argc, char *argv[])
 		}
 	}
 
+#ifdef WEBOS
+	// WebOS: Hardcoded game path for testing (no menu controls yet)
+	// TODO: Remove this once proper input is working
+	if (!cdfile) {
+		static char webos_game_path[MAXPATHLEN];
+		strncpy(webos_game_path, "/media/internal/.pcsx/games/CrashBandicoot.bin", MAXPATHLEN);
+		cdfile = webos_game_path;
+		SysPrintf("WebOS: Auto-loading game from %s\n", cdfile);
+	}
+#endif
+
 	if (cdfile)
 		set_cd_image(cdfile);
 
@@ -657,6 +678,9 @@ int main(int argc, char *argv[])
 	pl_init();
 	plat_init();
 	menu_init(); // loads config
+
+	// WebOS: Set Video Overlay output (hardware accelerated, avoids touch flicker)
+	webos_set_video_default();
 
 	if (emu_core_init() != 0)
 		return 1;
@@ -731,6 +755,7 @@ int main(int argc, char *argv[])
 	SysClose();
 	menu_finish();
 	plat_finish();
+	webos_finish();
 
 	return 0;
 }
@@ -773,6 +798,7 @@ static void SignalExit(int sig) {
 	SysPrintf("got signal %d\n", sig);
 	// only to restore framebuffer/resolution on some devices
 	plat_finish();
+	webos_finish();
 	_exit(1);
 }
 
