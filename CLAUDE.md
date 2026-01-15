@@ -215,3 +215,56 @@ Enabled via `./configure --enable-threads` (on by default):
 
 ### Save States
 The emulator supports save/load states via `freeze/unfreeze` functions in each component (CPU, GPU, SPU, etc.).
+
+## WebOS Touchscreen Controls
+
+### Architecture
+Touch controls are implemented in `frontend/in_webos_touch.c` with two modes:
+- **Game mode**: Full PlayStation controller layout (D-pad, face buttons, shoulders, start/select, menu)
+- **Menu mode**: Simplified navigation (UP, DOWN, BACK, OK at bottom of screen)
+
+### Multitouch Support
+WebOS SDL 1.2 has Palm-specific multitouch extensions:
+```c
+// SDL mouse events include 'which' field for finger index (0-4)
+finger_id = event->button.which;  // Not always 0!
+if (finger_id >= MAX_FINGERS)
+    finger_id = 0;
+
+// Can also poll directly:
+SDL_GetMultiMouseState(int which, int *x, int *y);  // Up to SDL_MAXMOUSE (5) fingers
+```
+
+### Touch Zone Positioning (HP TouchPad 1024x768)
+Controls need to be shifted down significantly for comfortable thumb reach:
+- D-pad and action buttons: ~23% down from center
+- Shoulder buttons: ~20% down from top edge
+- Start/Select: At screen edge (y=708)
+- Menu button: Top center (always accessible)
+
+### Button Overlay Rendering
+- Draw button outlines only (not filled) to avoid obscuring game content
+- Fill buttons only when pressed (visual feedback)
+- Use `SDL_FillRect()` for filled areas, custom `draw_rect_outline_sdl()` for borders
+- Draw overlay after game frame in `plat_video_menu_end()` for all render paths (YUV, GL, software)
+
+### Menu Integration
+The menu system uses `PBTN_*` constants from `libpicofe/input.h`:
+- `PBTN_UP`, `PBTN_DOWN` - Navigation
+- `PBTN_MOK` - Confirm/OK
+- `PBTN_MBACK` - Back/Cancel
+
+**Important**: `frontend/libpicofe/input.c` requires local modification to call `webos_touch_get_menu_buttons()`. Add to Makefile:
+```makefile
+frontend/libpicofe/input.o: CFLAGS += -DWEBOS
+```
+
+### Loading Screen
+Display "Loading..." during game load to provide user feedback:
+```c
+// In plat_sdl.c - plat_video_show_loading()
+memset(plat_sdl_screen->pixels, 0, ...);  // Clear to black
+basic_text_out16_nf(pixels, w, x, y, "Loading...");  // From libpicofe/fonts.h
+SDL_Flip(plat_sdl_screen);
+```
+Call from `menu.c` in `run_cd_image()` before heavy loading operations.
