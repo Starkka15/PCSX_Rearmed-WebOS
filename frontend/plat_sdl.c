@@ -28,6 +28,11 @@
 #include "plat.h"
 #include "revision.h"
 
+#ifdef WEBOS
+#include "in_webos_touch.h"
+#include "../libpcsxcore/r3000a.h"
+#endif
+
 #include "libpicofe/plat_sdl.c"
 
 #ifdef MIYOO
@@ -172,6 +177,25 @@ static void sdl_event_handler(void *event_)
 {
   SDL_Event *event = event_;
 
+#ifdef WEBOS
+  /* Process touch events for WebOS on-screen controls */
+  {
+    int ret = webos_touch_event(event);
+    if (ret == 2 && !in_menu) {
+      /* Menu button pressed (only in game mode) */
+      extern enum sched_action emu_action, emu_action_old;
+      emu_action = SACTION_ENTER_MENU;
+      emu_action_old = 0;
+      psxRegs.stop++;
+      return;
+    }
+    if (ret == 1) {
+      /* Touch event handled */
+      return;
+    }
+  }
+#endif
+
   switch (event->type) {
   case SDL_VIDEORESIZE:
     if (window_w != (event->resize.w & ~3) || window_h != (event->resize.h & ~1)) {
@@ -218,6 +242,16 @@ void plat_init(void)
   int shadow_size;
   int ret;
 
+#ifdef WEBOS
+  {
+    FILE *f = fopen("/tmp/pcsx_init_debug.log", "w");
+    if (f) {
+      fprintf(f, "plat_init() called!\n");
+      fclose(f);
+    }
+  }
+#endif
+
   plat_sdl_quit_cb = quit_cb;
 
   old_fullscreen = -1; // hack
@@ -248,6 +282,11 @@ void plat_init(void)
   in_sdl_init(&in_sdl_platform_data, sdl_event_handler);
   in_probe();
   pl_rearmed_cbs.only_16bpp = 1;
+
+#ifdef WEBOS
+  /* Initialize WebOS on-screen touch controls */
+  webos_touch_init();
+#endif
   pl_rearmed_cbs.pl_get_layer_pos = get_layer_pos;
 
   bgr_to_uyvy_init();
@@ -262,6 +301,9 @@ void plat_init(void)
 
 void plat_finish(void)
 {
+#ifdef WEBOS
+  webos_touch_finish();
+#endif
   free(shadow_fb);
   shadow_fb = NULL;
   free(menubg_img);
@@ -673,9 +715,19 @@ void *plat_gvideo_flip(void)
       g_layer_w, g_layer_h
     };
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
+#ifdef WEBOS
+    /* Draw touch controls on top of the screen after overlay is displayed */
+    webos_touch_draw_overlay_sdl(plat_sdl_screen);
+    SDL_Flip(plat_sdl_screen);
+#endif
   }
   else if (plat_sdl_gl_active) {
     gl_flip_v(shadow_fb, psx_w, psx_h, g_scaler != SCALE_FULLSCREEN ? gl_vertices : NULL);
+#ifdef WEBOS
+    /* Draw touch controls overlay after the game frame */
+    webos_touch_draw_overlay();
+    SDL_GL_SwapBuffers();
+#endif
     ret = shadow_fb;
   }
   else
@@ -685,6 +737,11 @@ void *plat_gvideo_flip(void)
     forced_flips--;
     do_flip |= 1;
   }
+#ifdef WEBOS
+  /* Draw touch controls overlay on software rendering path */
+  if (do_flip)
+    webos_touch_draw_overlay_sdl(plat_sdl_screen);
+#endif
   if (do_flip)
     SDL_Flip(plat_sdl_screen);
   handle_window_resize();
@@ -711,6 +768,10 @@ void plat_video_menu_enter(int is_rom_loaded)
   int d;
 
   in_menu = 1;
+
+#ifdef WEBOS
+  webos_touch_set_menu_mode(1);
+#endif
 
   /* surface will be lost, must adjust pl_vout_buf for menu bg */
   if (plat_sdl_overlay != NULL)
@@ -778,13 +839,27 @@ void plat_video_menu_end(void)
     SDL_UnlockYUVOverlay(plat_sdl_overlay);
 
     SDL_DisplayYUVOverlay(plat_sdl_overlay, &dstrect);
+#ifdef WEBOS
+    /* Draw touch overlay on top of menu (software blit to screen) */
+    webos_touch_draw_overlay_sdl(plat_sdl_screen);
+    SDL_Flip(plat_sdl_screen);
+#endif
   }
   else if (plat_sdl_gl_active) {
     gl_flip_v(g_menuscreen_ptr, g_menuscreen_w, g_menuscreen_h,
         g_scaler != SCALE_FULLSCREEN ? gl_vertices : NULL);
+#ifdef WEBOS
+    /* Draw touch overlay on top of menu */
+    webos_touch_draw_overlay_sdl(plat_sdl_screen);
+    SDL_Flip(plat_sdl_screen);
+#endif
   }
   else {
     centered_blit_menu();
+#ifdef WEBOS
+    /* Draw touch overlay for menu navigation */
+    webos_touch_draw_overlay_sdl(plat_sdl_screen);
+#endif
     do_flip |= 2;
   }
 
@@ -804,6 +879,11 @@ void plat_video_menu_leave(void)
   int d;
 
   in_menu = 0;
+
+#ifdef WEBOS
+  webos_touch_set_menu_mode(0);
+#endif
+
   if (plat_sdl_overlay != NULL || plat_sdl_gl_active)
     memset(shadow_fb, 0, g_menuscreen_w * g_menuscreen_h * 2);
 
@@ -815,6 +895,33 @@ void plat_video_menu_leave(void)
 
   for (d = 0; d < IN_MAX_DEVS; d++)
     in_set_config_int(d, IN_CFG_ANALOG_MAP_ULDR, 0);
+}
+
+void plat_video_show_loading(void)
+{
+  const char *msg = "Loading...";
+  int x, y;
+
+  if (plat_sdl_screen == NULL)
+    return;
+
+  /* Clear screen to black */
+  if (SDL_MUSTLOCK(plat_sdl_screen))
+    SDL_LockSurface(plat_sdl_screen);
+
+  memset(plat_sdl_screen->pixels, 0,
+    plat_sdl_screen->pitch * plat_sdl_screen->h);
+
+  /* Draw "Loading..." centered on screen (8x8 font, ~10 chars) */
+  x = (plat_sdl_screen->w - 80) / 2;  /* 10 chars * 8 pixels */
+  y = (plat_sdl_screen->h - 8) / 2;
+
+  basic_text_out16_nf(plat_sdl_screen->pixels, plat_sdl_screen->w, x, y, msg);
+
+  if (SDL_MUSTLOCK(plat_sdl_screen))
+    SDL_UnlockSurface(plat_sdl_screen);
+
+  SDL_Flip(plat_sdl_screen);
 }
 
 void *plat_prepare_screenshot(int *w, int *h, int *bpp)
@@ -837,6 +944,28 @@ void plat_trigger_vibrate(int pad, int low, int high)
 
 void plat_minimize(void)
 {
+}
+
+/* Set OpenGL as the video output method (for WebOS GPU acceleration) */
+void plat_sdl_set_gl_default(void)
+{
+  if (vout_mode_gl != -1) {
+    plat_target.vout_method = vout_mode_gl;
+  }
+}
+
+/* Set Video Overlay as the video output method (for WebOS - avoids touch flicker) */
+void plat_sdl_set_overlay_default(void)
+{
+  if (vout_mode_overlay != -1) {
+    plat_target.vout_method = vout_mode_overlay;
+  }
+}
+
+/* Set software rendering mode (renders directly to SDL screen surface) */
+void plat_sdl_set_software_default(void)
+{
+  plat_target.vout_method = 0;
 }
 
 // vim:shiftwidth=2:expandtab

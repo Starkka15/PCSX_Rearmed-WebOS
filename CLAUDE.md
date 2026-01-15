@@ -50,6 +50,12 @@ make DEBUG_UBSAN=1     # UndefinedBehaviorSanitizer
 sudo apt-get install libsdl1.2-dev libasound2-dev libpng-dev libz-dev
 ```
 
+### Clean Build
+```bash
+make clean                # Remove build artifacts
+./webos-package.sh --clean  # Clean WebOS artifacts
+```
+
 ## Architecture
 
 ### Core Emulation (`libpcsxcore/`)
@@ -91,6 +97,11 @@ Git submodules - run `git submodule update --init` if missing:
 - `appinfo.json` - WebOS app manifest (version, app ID, icon paths)
 - `psx.png`, `psx-256.png` - App icons (64x64 and 256x256)
 - PDK-based native application packaging
+- Target: ARMv7 with NEON (legacy webOS devices)
+
+### WebOS Platform Files (`frontend/`)
+- `plat_webos.c`, `plat_webos.h` - PDL (Palm Device Library) initialization
+- PDL must be initialized before SDL for proper GPU access
 
 ## WebOS Packaging
 
@@ -109,8 +120,56 @@ export CROSS_COMPILE=arm-linux-gnueabi-
 
 ### Requirements
 - PalmSDK installed at `/opt/PalmSDK` (provides `palm-package`)
+- PalmPDK installed at `/opt/PalmPDK` (provides headers for SDL, GLES, PDL)
 - ARM cross-compiler (e.g., `arm-linux-gnueabi-gcc`) for building
 - Git submodules initialized
+
+### PalmPDK Structure
+```
+/opt/PalmPDK/
+├── include/           # Headers for cross-compilation
+│   ├── SDL/           # SDL 1.2 headers
+│   ├── GLES/          # OpenGL ES 1.1 headers
+│   ├── GLES2/         # OpenGL ES 2.0 headers
+│   └── PDL.h          # Palm Device Library header
+└── device/lib/        # ARM device libraries (reference only)
+    ├── libSDL-1.2.so
+    ├── libGLES_CM.so  # OpenGL ES 1.1
+    ├── libpdl.so      # Palm Device Library
+    └── libpng12.so
+```
+
+### GPU Acceleration
+WebOS builds use OpenGL ES 1.1 (libGLES_CM.so) for hardware-accelerated display output:
+- PSX rendering uses NEON-optimized software renderer
+- Final display uses OpenGL ES for fast scaling/composition
+- Select "OpenGL" video output mode in the menu for best performance
+
+### WebOS OpenGL Without Touch Flicker
+**CRITICAL**: WebOS has a 3-layer display system. Using EGL directly causes screen flicker on touch events.
+
+**Solution**: Use SDL's built-in OpenGL support instead of EGL:
+```c
+// CORRECT - No flicker
+SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+SDL_SetVideoMode(w, h, 16, SDL_OPENGL | SDL_FULLSCREEN);
+SDL_GL_SwapBuffers();
+
+// WRONG - Causes flicker
+eglGetDisplay(...);
+eglCreateContext(...);
+eglSwapBuffers(...);
+```
+
+**Implementation**: See `frontend/libpicofe/gl_webos.c` for the WebOS-specific GL code.
+
+**Linking**: Link directly against `libGLES_CM.so`, NOT `libEGL.so`:
+```makefile
+LDLIBS += -lGLES_CM  # Correct
+# Do NOT use: -lEGL
+```
+
+See `WEBOS_GL_NOTES.md` for detailed documentation.
 
 ### Package Structure
 The script creates a webOS .ipk package containing:
@@ -144,11 +203,15 @@ palm-install com.starkka.pcsxrearmed_*.ipk
 ### Conditional Compilation
 Heavy use of `#ifdef` for platform/architecture-specific code:
 - `HAVE_NEON_ASM` - ARM NEON assembly
+- `HAVE_GLES` - OpenGL ES support
 - `DYNAREC=ari64` vs `DYNAREC=lightrec`
-- Platform defines: `PANDORA`, `MAEMO`, `MIYOO`
+- Platform defines: `PANDORA`, `MAEMO`, `MIYOO`, `WEBOS`
 
 ### Threading
-Enabled via `./configure --enable-threads`:
+Enabled via `./configure --enable-threads` (on by default):
 - `USE_ASYNC_CDROM` - Async CD-ROM operations
 - `USE_ASYNC_GPU` - Async GPU rendering
 - `NDRC_THREAD` - Threaded dynarec
+
+### Save States
+The emulator supports save/load states via `freeze/unfreeze` functions in each component (CPU, GPU, SPU, etc.).
