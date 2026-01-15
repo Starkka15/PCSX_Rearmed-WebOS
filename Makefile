@@ -419,6 +419,8 @@ OBJS += frontend/libpicofe/in_sdl.o
 OBJS += frontend/libpicofe/plat_dummy.o
 OBJS += frontend/plat_sdl.o
 OBJS += frontend/plat_webos.o
+# WebOS touch input with on-screen controls overlay
+OBJS += frontend/in_webos_touch.o
 # WebOS-specific GL implementation using SDL's GL support (like TuxRacer)
 # This avoids EGL which doesn't work properly on WebOS and causes touch flicker
 OBJS += frontend/libpicofe/gl_webos.o
@@ -426,6 +428,8 @@ frontend/libpicofe/plat_sdl.o: CFLAGS += -DHAVE_GLES -DWEBOS
 frontend/libpicofe/gl_webos.o: CFLAGS += -DHAVE_GLES -DWEBOS
 frontend/plat_sdl.o: CFLAGS += -DHAVE_GLES -DWEBOS
 frontend/plat_webos.o: CFLAGS += -DWEBOS
+frontend/in_webos_touch.o: CFLAGS += -DWEBOS
+frontend/plugin_lib.o: CFLAGS += -DWEBOS
 frontend/main.o: CFLAGS += -DWEBOS
 frontend/menu.o: CFLAGS += -DHAVE_GLES -DMENU_SHOW_VARSCALER=1
 # Link directly against GLES library (like TuxRacer does)

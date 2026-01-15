@@ -38,6 +38,10 @@
 #include "../libpcsxcore/psxcounters.h"
 #include "arm_features.h"
 
+#ifdef WEBOS
+#include "in_webos_touch.h"
+#endif
+
 #define HUD_HEIGHT 10
 
 int in_type[8];
@@ -721,6 +725,11 @@ static void update_input(void)
 
 	in_keystate[0] = actions[IN_BINDTYPE_PLAYER12] & 0xffff;
 	in_keystate[1] = (actions[IN_BINDTYPE_PLAYER12] >> 16) & 0xffff;
+
+#ifdef WEBOS
+	/* Combine with WebOS on-screen touch controls */
+	in_keystate[0] |= webos_touch_get_buttons();
+#endif
 
 	if (tsdev) for (i = 0; i < 2; i++) {
 		int in = 0, x = 0, y = 0, trigger;;

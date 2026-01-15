@@ -124,21 +124,23 @@ int webos_is_available(void)
 }
 
 /*
- * Set default video output to OpenGL via SDL (not EGL)
+ * Set default video output to software rendering
  * This should be called after plat_init() to override any config defaults
  *
- * Note: We use SDL's OpenGL support (like TuxRacer) instead of EGL directly.
- * EGL doesn't work properly on WebOS and causes screen flicker on touch events.
- * SDL manages the GL context internally and integrates with WebOS's 3-layer system.
+ * Note: We use software rendering mode because:
+ * - OpenGL/EGL context creation fails on WebOS HP TouchPad
+ * - YUV overlay mode works but renders on a hardware layer that covers the SDL surface
+ * - Software mode renders directly to the SDL screen surface, allowing us to draw
+ *   touch controls on top of the game frame
  */
 void webos_set_video_default(void)
 {
     if (!pdl_initialized)
         return;
 
-    /* Call the platform function to set GL mode */
-    extern void plat_sdl_set_gl_default(void);
+    /* Call the platform function to set software mode */
+    extern void plat_sdl_set_software_default(void);
 
-    printf("WebOS: Setting OpenGL (via SDL) as default output for GPU acceleration\n");
-    plat_sdl_set_gl_default();
+    printf("WebOS: Setting software rendering for touch control overlay support\n");
+    plat_sdl_set_software_default();
 }
