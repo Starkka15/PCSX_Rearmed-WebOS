@@ -32,28 +32,29 @@ typedef struct {
 #define MENU_KEY_MBACK -13
 
 /* Layout for 1024x768 landscape - game controls */
+/* D-pad/action: down 23% (176px), shoulders: down 20% (154px), start/sel: down 10% */
 static const touch_zone_t game_touch_zones[] = {
     /* D-Pad - left side */
-    { 80,  280, 80, 80,  DKEY_UP,       "UP" },
-    { 80,  440, 80, 80,  DKEY_DOWN,     "DN" },
-    { 0,   360, 80, 80,  DKEY_LEFT,     "LT" },
-    { 160, 360, 80, 80,  DKEY_RIGHT,    "RT" },
+    { 80,  456, 80, 80,  DKEY_UP,       "UP" },
+    { 80,  616, 80, 80,  DKEY_DOWN,     "DN" },
+    { 0,   536, 80, 80,  DKEY_LEFT,     "LT" },
+    { 160, 536, 80, 80,  DKEY_RIGHT,    "RT" },
 
-    /* Action buttons - right side (PlayStation layout) */
-    { 864, 280, 80, 80,  DKEY_TRIANGLE, "/\\" },
-    { 864, 440, 80, 80,  DKEY_CROSS,    "X" },
-    { 784, 360, 80, 80,  DKEY_SQUARE,   "[]" },
-    { 944, 360, 80, 80,  DKEY_CIRCLE,   "O" },
+    /* Action buttons - right side */
+    { 864, 456, 80, 80,  DKEY_TRIANGLE, "/\\" },
+    { 864, 616, 80, 80,  DKEY_CROSS,    "X" },
+    { 784, 536, 80, 80,  DKEY_SQUARE,   "[]" },
+    { 944, 536, 80, 80,  DKEY_CIRCLE,   "O" },
 
-    /* Shoulder buttons - top corners */
-    { 0,   0,   120, 60, DKEY_L1,       "L1" },
-    { 0,   60,  120, 60, DKEY_L2,       "L2" },
-    { 904, 0,   120, 60, DKEY_R1,       "R1" },
-    { 904, 60,  120, 60, DKEY_R2,       "R2" },
+    /* Shoulder buttons - shifted down 20% (154px) */
+    { 0,   154, 120, 60, DKEY_L1,       "L1" },
+    { 0,   214, 120, 60, DKEY_L2,       "L2" },
+    { 904, 154, 120, 60, DKEY_R1,       "R1" },
+    { 904, 214, 120, 60, DKEY_R2,       "R2" },
 
-    /* Start/Select - bottom center */
-    { 400, 700, 100, 60, DKEY_SELECT,   "SEL" },
-    { 524, 700, 100, 60, DKEY_START,    "STA" },
+    /* Start/Select - bottom center (at screen edge) */
+    { 400, 708, 100, 60, DKEY_SELECT,   "SEL" },
+    { 524, 708, 100, 60, DKEY_START,    "STA" },
 
     /* Menu button - top center */
     { 462, 0,   100, 50, -1,            "MENU" },  /* -1 = special: open menu */
@@ -305,7 +306,10 @@ int webos_touch_event(const SDL_Event *event)
 
     switch (event->type) {
     case SDL_MOUSEBUTTONDOWN:
-        finger_id = 0;  /* Mouse is finger 0 */
+        /* WebOS SDL uses 'which' field for multitouch finger index (0-4) */
+        finger_id = event->button.which;
+        if (finger_id >= MAX_FINGERS)
+            finger_id = 0;
         x = event->button.x;
         y = event->button.y;
         zone = find_zone(x, y);
@@ -322,14 +326,18 @@ int webos_touch_event(const SDL_Event *event)
         return 1;
 
     case SDL_MOUSEBUTTONUP:
-        finger_id = 0;
+        finger_id = event->button.which;
+        if (finger_id >= MAX_FINGERS)
+            finger_id = 0;
         finger_zones[finger_id] = -1;
         update_buttons();
         return 1;
 
     case SDL_MOUSEMOTION:
         if (event->motion.state & SDL_BUTTON(1)) {
-            finger_id = 0;
+            finger_id = event->motion.which;
+            if (finger_id >= MAX_FINGERS)
+                finger_id = 0;
             x = event->motion.x;
             y = event->motion.y;
             zone = find_zone(x, y);
