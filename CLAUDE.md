@@ -235,18 +235,57 @@ if (finger_id >= MAX_FINGERS)
 SDL_GetMultiMouseState(int which, int *x, int *y);  // Up to SDL_MAXMOUSE (5) fingers
 ```
 
+### Data Folder Path
+The emulator stores all user data in `/media/internal/pcsx/` (non-hidden folder):
+- BIOS: `/media/internal/pcsx/bios/`
+- Memory cards: `/media/internal/pcsx/memcards/`
+- Save states: `/media/internal/pcsx/sstates/`
+- Config: `/media/internal/pcsx/pcsx.cfg`
+
+This is defined in `frontend/main.h` as `PCSX_DOT_DIR "/pcsx/"`.
+
 ### Touch Zone Positioning (HP TouchPad 1024x768)
-Controls need to be shifted down significantly for comfortable thumb reach:
-- D-pad and action buttons: ~23% down from center
-- Shoulder buttons: ~20% down from top edge
-- Start/Select: At screen edge (y=708)
-- Menu button: Top center (always accessible)
+Controls are positioned for comfortable thumb reach in landscape mode:
+- D-pad: Left side, y=525-765 (cardinal) with diagonal zones
+- Action buttons: Right side, y=525-765
+- Shoulder buttons: Top corners, y=338-458 (L1/L2 left, R1/R2 right)
+- Start/Select: Bottom center at screen edge (y=708)
+- Menu button: Top center (y=0, always accessible)
+
+### Diagonal D-Pad Zones
+Invisible touch zones between cardinal directions allow diagonal input:
+```c
+/* D-Pad diagonal zones (no outline drawn, empty label) */
+{ 160, 525, 80, 80,  DKEY_UP_RIGHT,   "" },
+{ 0,   525, 80, 80,  DKEY_UP_LEFT,    "" },
+{ 160, 685, 80, 80,  DKEY_DOWN_RIGHT, "" },
+{ 0,   685, 80, 80,  DKEY_DOWN_LEFT,  "" },
+```
+Special key values (-20 to -23) are mapped to combined button presses in `update_buttons()`.
 
 ### Button Overlay Rendering
 - Draw button outlines only (not filled) to avoid obscuring game content
 - Fill buttons only when pressed (visual feedback)
 - Use `SDL_FillRect()` for filled areas, custom `draw_rect_outline_sdl()` for borders
 - Draw overlay after game frame in `plat_video_menu_end()` for all render paths (YUV, GL, software)
+
+### PNG Icon Loading
+Menu and game buttons use PNG icons with alpha transparency:
+```
+webos/
+├── menu-up.png, menu-down.png, menu-forward.png, menu-backward.png  # Menu navigation
+├── control-triangle.png, control-circle.png, control-cross.png, control-square.png  # Game buttons
+```
+
+Icons are loaded at init via `load_png_rgba()` using libpng, stored as RGBA pixel data, and blitted with alpha blending to RGB565 surface. The `blit_icon()` function handles scaling and per-pixel alpha blending.
+
+### Control Opacity
+In-game controls use 60% opacity for both borders and pressed highlights:
+```c
+#define BORDER_ALPHA 153    /* 60% of 255 */
+#define PRESSED_ALPHA 153   /* 60% of 255 */
+```
+Colors are alpha-blended per-pixel in `draw_rect_with_alpha()` and `draw_rect_outline_alpha()`.
 
 ### Menu Integration
 The menu system uses `PBTN_*` constants from `libpicofe/input.h`:
@@ -303,5 +342,49 @@ static void inject_key_event(SDLKey key, int pressed)
 
 This integrates with the existing SDL keyboard input path in libpicofe, which already handles timing, repeat, and state tracking correctly.
 
+**Critical: Preventing Stuck Menu Buttons**
+Menu buttons can get "stuck" if KEY_DOWN events are injected but KEY_UP events are lost (e.g., when transitioning between game and menu modes). The fix is to inject KEY_UP for all menu keys when:
+1. Entering menu mode (`webos_touch_set_menu_mode(1)`)
+2. At initialization (`webos_touch_init()`)
+
+```c
+/* Inject KEY_UP for all menu keys to ensure clean state */
+inject_key_event(SDLK_UP, 0);
+inject_key_event(SDLK_DOWN, 0);
+inject_key_event(SDLK_RETURN, 0);
+inject_key_event(SDLK_ESCAPE, 0);
+```
+
+Also flush stale touch events from SDL queue when switching modes:
+```c
+while (SDL_PeepEvents(&event, 1, SDL_GETEVENT,
+       SDL_EVENTMASK(SDL_MOUSEBUTTONDOWN) |
+       SDL_EVENTMASK(SDL_MOUSEBUTTONUP) |
+       SDL_EVENTMASK(SDL_MOUSEMOTION)) > 0) {
+    /* discard */
+}
+```
+
 **Fallback (Queue)**:
 If keyboard injection doesn't work on a platform, the Queue approach is the second-best option. It buffers button press events and returns them one at a time, preventing lost inputs.
+
+## Development Notes
+
+### Quick Build & Install Cycle
+```bash
+# Remove old package, rebuild, and install
+palm-install -r com.starkka.pcsxrearmed 2>/dev/null
+rm -f webos/pcsx  # Force fresh binary copy
+CROSS_COMPILE=arm-linux-gnueabi- ./webos-package.sh
+palm-install com.starkka.pcsxrearmed_*.ipk
+```
+
+### Debugging on Device
+View app logs via novaterm or SSH:
+```bash
+# On device
+tail -f /var/log/messages | grep -i pcsx
+```
+
+### Test Variants
+The `menu_test_variants/` directory contains alternative implementations of `in_webos_touch.c` for testing different menu button approaches (MinHold, Debounce, Queue, SyncPoll, KeyInject). Use `build_menu_variants.sh` to build all variants with unique app IDs for side-by-side comparison.
