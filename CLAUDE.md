@@ -236,13 +236,13 @@ SDL_GetMultiMouseState(int which, int *x, int *y);  // Up to SDL_MAXMOUSE (5) fi
 ```
 
 ### Data Folder Path
-The emulator stores all user data in `/media/internal/pcsx/` (non-hidden folder):
-- BIOS: `/media/internal/pcsx/bios/`
-- Memory cards: `/media/internal/pcsx/memcards/`
-- Save states: `/media/internal/pcsx/sstates/`
-- Config: `/media/internal/pcsx/pcsx.cfg`
+The emulator stores all user data in `/media/internal/.pcsx/` (hidden folder):
+- BIOS: `/media/internal/.pcsx/bios/`
+- Memory cards: `/media/internal/.pcsx/memcards/`
+- Save states: `/media/internal/.pcsx/sstates/`
+- Config: `/media/internal/.pcsx/pcsx.cfg`
 
-This is defined in `frontend/main.h` as `PCSX_DOT_DIR "/pcsx/"`.
+This is defined in `frontend/main.h` as `PCSX_DOT_DIR "/.pcsx/"`.
 
 ### Touch Zone Positioning (HP TouchPad 1024x768)
 Controls are positioned for comfortable thumb reach in landscape mode:

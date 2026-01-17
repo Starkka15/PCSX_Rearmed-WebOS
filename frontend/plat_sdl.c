@@ -11,6 +11,9 @@
 #include <stdio.h>
 #include <assert.h>
 #include <SDL.h>
+#ifdef WEBOS
+#include <unistd.h>
+#endif
 
 #include "../libpcsxcore/plugins.h"
 #include "libpicofe/input.h"
@@ -878,24 +881,60 @@ void plat_video_menu_leave(void)
 {
   int d;
 
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() ENTER\n");
+  fflush(stderr);
+
   in_menu = 0;
 
 #ifdef WEBOS
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() calling webos_touch_set_menu_mode(0)\n");
+  fflush(stderr);
   webos_touch_set_menu_mode(0);
 #endif
+
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() overlay=%p gl_active=%d\n", plat_sdl_overlay, plat_sdl_gl_active);
+  fflush(stderr);
 
   if (plat_sdl_overlay != NULL || plat_sdl_gl_active)
     memset(shadow_fb, 0, g_menuscreen_w * g_menuscreen_h * 2);
 
   if (plat_target.vout_fullscreen)
     change_mode(fs_w, fs_h);
+
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() calling overlay_or_gl_check_enable\n");
+  fflush(stderr);
   overlay_or_gl_check_enable();
+
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() calling centered_clear\n");
+  fflush(stderr);
   centered_clear();
+
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() calling setup_blit_callbacks\n");
+  fflush(stderr);
   setup_blit_callbacks(psx_w, psx_h);
 
   for (d = 0; d < IN_MAX_DEVS; d++)
     in_set_config_int(d, IN_CFG_ANALOG_MAP_ULDR, 0);
+
+  fprintf(stderr, "PCSX_DEBUG: plat_video_menu_leave() DONE\n");
+  fflush(stderr);
 }
+
+#ifdef WEBOS
+static void play_startup_sound(void)
+{
+  pid_t pid = fork();
+  if (pid == 0) {
+    /* Child process */
+    setsid();  /* Detach from parent session */
+    execl("/usr/bin/aplay", "aplay", "-q",
+      "/media/cryptofs/apps/usr/palm/applications/com.starkka.pcsxrearmed/startup.wav",
+      (char *)NULL);
+    _exit(0);
+  }
+  /* Parent continues immediately */
+}
+#endif
 
 void plat_video_show_loading(void)
 {
@@ -904,6 +943,17 @@ void plat_video_show_loading(void)
 
   if (plat_sdl_screen == NULL)
     return;
+
+#ifdef WEBOS
+  /* Play startup sound in background while loading */
+  {
+    static int sound_played = 0;
+    if (!sound_played) {
+      play_startup_sound();
+      sound_played = 1;
+    }
+  }
+#endif
 
   /* Clear screen to black */
   if (SDL_MUSTLOCK(plat_sdl_screen))

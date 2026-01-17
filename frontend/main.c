@@ -729,8 +729,13 @@ int main(int argc, char *argv[])
 	pl_start_watchdog();
 #endif
 
+	fprintf(stderr, "PCSX_DEBUG: main() entering emulation loop\n");
+	fflush(stderr);
+
 	while (!g_emu_want_quit)
 	{
+		fprintf(stderr, "PCSX_DEBUG: main() loop iteration start, calling psxCpu->Execute\n");
+		fflush(stderr);
 		psxRegs.stop = 0;
 		emu_action = SACTION_NONE;
 
