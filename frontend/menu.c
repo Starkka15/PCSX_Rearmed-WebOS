@@ -576,7 +576,7 @@ static int menu_write_config(int is_game)
 
 static int menu_do_last_cd_img(int is_get)
 {
-	static const char *defaults[] = { "/media", "/mnt/sd", "/mnt" };
+	static const char *defaults[] = { "/media/internal/.pcsx", "/media/internal", "/media" };
 	char path[256];
 	struct STAT st;
 	FILE *f;
@@ -2192,6 +2192,9 @@ static int run_cd_image(const char *fname)
 	const char *ppfname = NULL;
 	char fname2[256];
 
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() ENTER - fname=%s\n", fname);
+	fflush(stderr);
+
 	// simle ppf handling, like game.chd.ppf
 	if (4 < fname_len && fname_len < sizeof(fname2)
 	    && strcasecmp(fname + fname_len - 4, ".ppf") == 0) {
@@ -2202,14 +2205,20 @@ static int run_cd_image(const char *fname)
 	}
 
 	/* Show loading screen while game loads */
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling plat_video_show_loading\n");
+	fflush(stderr);
 	plat_video_show_loading();
 
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling reload_plugins\n");
+	fflush(stderr);
 	ready_to_go = 0;
 	reload_plugins(fname);
 
 	// always autodetect, menu_sync_config will override as needed
 	Config.PsxAuto = 1;
 
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling CheckCdrom\n");
+	fflush(stderr);
 	if (CheckCdrom() == -1) {
 		// Only check the CD if we are starting the console with a CD
 		ClosePlugins();
@@ -2219,17 +2228,25 @@ static int run_cd_image(const char *fname)
 	if (ppfname)
 		BuildPPFCache(ppfname);
 
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling SysReset\n");
+	fflush(stderr);
 	SysReset();
 
 	// Read main executable directly from CDRom and start it
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling LoadCdrom\n");
+	fflush(stderr);
 	if (LoadCdrom() == -1) {
 		ClosePlugins();
 		menu_update_msg("failed to load CD image");
 		return -1;
 	}
 
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() calling emu_on_new_cd\n");
+	fflush(stderr);
 	emu_on_new_cd(1);
 	ready_to_go = 1;
+	fprintf(stderr, "PCSX_DEBUG: run_cd_image() SUCCESS\n");
+	fflush(stderr);
 
 	if (autoload_state) {
 		unsigned int newest = 0;
@@ -2788,34 +2805,51 @@ void menu_prepare_emu(void)
 {
 	R3000Acpu *prev_cpu = psxCpu;
 
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() ENTER\n");
+	fflush(stderr);
+
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() calling plat_video_menu_leave\n");
+	fflush(stderr);
 	plat_video_menu_leave();
 
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() selecting CPU\n");
+	fflush(stderr);
 	#if !defined(DRC_DISABLE) || defined(LIGHTREC)
 	psxCpu = (Config.Cpu == CPU_INTERPRETER) ? &psxInt : &psxRec;
 	#else
 	psxCpu = &psxInt;
 	#endif
 	if (psxCpu != prev_cpu) {
+		fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() CPU changed, reinitializing\n");
+		fflush(stderr);
 		prev_cpu->Notify(R3000ACPU_NOTIFY_BEFORE_SAVE, NULL);
 		prev_cpu->Shutdown();
 		psxCpu->Init();
 		psxCpu->Notify(R3000ACPU_NOTIFY_AFTER_LOAD, NULL);
 	}
 
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() calling menu_sync_config\n");
+	fflush(stderr);
 	menu_sync_config();
 	psxCpu->ApplyConfig();
 
 	if (cpu_clock > 0)
 		plat_target_cpu_clock_set(cpu_clock);
 
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() calling plugin_call_rearmed_cbs\n");
+	fflush(stderr);
 	// push config to GPU plugin
 	plugin_call_rearmed_cbs();
 
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() calling GPU_open\n");
+	fflush(stderr);
 	if (GPU_open != NULL) {
 		int ret = GPU_open(&gpuDisp, "PCSX", NULL);
 		if (ret)
 			fprintf(stderr, "Warning: GPU_open returned %d\n", ret);
 	}
+	fprintf(stderr, "PCSX_DEBUG: menu_prepare_emu() DONE\n");
+	fflush(stderr);
 }
 
 void menu_update_msg(const char *msg)

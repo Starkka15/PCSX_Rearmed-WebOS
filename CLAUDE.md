@@ -221,7 +221,7 @@ The emulator supports save/load states via `freeze/unfreeze` functions in each c
 ### Architecture
 Touch controls are implemented in `frontend/in_webos_touch.c` with two modes:
 - **Game mode**: Full PlayStation controller layout (D-pad, face buttons, shoulders, start/select, menu)
-- **Menu mode**: Simplified navigation (UP, DOWN, BACK, OK at bottom of screen)
+- **Menu mode**: 6-button navigation (UP, DOWN, LEFT, RIGHT as D-pad on left; OK, BACK on right)
 
 ### Multitouch Support
 WebOS SDL 1.2 has Palm-specific multitouch extensions:
@@ -235,18 +235,88 @@ if (finger_id >= MAX_FINGERS)
 SDL_GetMultiMouseState(int which, int *x, int *y);  // Up to SDL_MAXMOUSE (5) fingers
 ```
 
+### Data Folder Path
+The emulator stores all user data in `/media/internal/.pcsx/` (hidden folder):
+- BIOS: `/media/internal/.pcsx/bios/`
+- Memory cards: `/media/internal/.pcsx/memcards/`
+- Save states: `/media/internal/.pcsx/sstates/`
+- Config: `/media/internal/.pcsx/pcsx.cfg`
+
+This is defined in `frontend/main.h` as `PCSX_DOT_DIR "/.pcsx/"`.
+
 ### Touch Zone Positioning (HP TouchPad 1024x768)
-Controls need to be shifted down significantly for comfortable thumb reach:
-- D-pad and action buttons: ~23% down from center
-- Shoulder buttons: ~20% down from top edge
-- Start/Select: At screen edge (y=708)
-- Menu button: Top center (always accessible)
+Controls are positioned for comfortable thumb reach in landscape mode:
+- D-pad: Left side, y=525-765 (cardinal) with diagonal zones
+- Action buttons: Right side, y=525-765
+- Shoulder buttons: Top corners, y=338-458 (L1/L2 left, R1/R2 right)
+- Start/Select: Bottom center at screen edge (y=708)
+- Menu button: Top center (y=0, always accessible)
+
+### Diagonal D-Pad Zones
+Invisible touch zones between cardinal directions allow diagonal input:
+```c
+/* D-Pad diagonal zones (no outline drawn, empty label) */
+{ 160, 525, 80, 80,  DKEY_UP_RIGHT,   "" },
+{ 0,   525, 80, 80,  DKEY_UP_LEFT,    "" },
+{ 160, 685, 80, 80,  DKEY_DOWN_RIGHT, "" },
+{ 0,   685, 80, 80,  DKEY_DOWN_LEFT,  "" },
+```
+Special key values (-20 to -23) are mapped to combined button presses in `update_buttons()`.
 
 ### Button Overlay Rendering
 - Draw button outlines only (not filled) to avoid obscuring game content
 - Fill buttons only when pressed (visual feedback)
 - Use `SDL_FillRect()` for filled areas, custom `draw_rect_outline_sdl()` for borders
 - Draw overlay after game frame in `plat_video_menu_end()` for all render paths (YUV, GL, software)
+
+### Resolution Changes and Ghost Touch Controls
+**Problem**: When PS1 games change resolution (e.g., 640x480 → 320x240), touch control overlays from the previous frame appear duplicated or "ghosted" on screen.
+
+**Root Cause**: The WebOS compositor doesn't clear areas outside a shrinking SDL window. When the SDL surface shrinks, old touch control pixels remain visible in the compositor's buffer beyond the new window boundaries.
+
+**Solution** (in `frontend/plat_sdl.c` `change_mode()`): Before changing to a smaller resolution, briefly create a full-screen surface, clear it, double-flip for double buffering, then switch to the desired resolution:
+```c
+#ifdef WEBOS
+    /* On WebOS, the compositor doesn't clear areas outside a shrinking window.
+     * Briefly create a full-screen surface and clear it to remove ghost pixels. */
+    if (plat_target.vout_method == 0 && fs_w && fs_h) {
+      SDL_Surface *tmp = SDL_SetVideoMode(fs_w, fs_h, 16, flags | SDL_FULLSCREEN);
+      if (tmp) {
+        if (SDL_MUSTLOCK(tmp))
+          SDL_LockSurface(tmp);
+        memset(tmp->pixels, 0, tmp->pitch * tmp->h);
+        if (SDL_MUSTLOCK(tmp))
+          SDL_UnlockSurface(tmp);
+        SDL_Flip(tmp);
+        SDL_Flip(tmp); /* Double flip for double buffering */
+      }
+    }
+#endif
+    plat_sdl_screen = SDL_SetVideoMode(set_w, set_h, 16, flags);
+```
+
+This forces the compositor to update its entire buffer, eliminating ghost pixels. Only applies to software rendering mode (vout_method == 0).
+
+### PNG Icon Loading
+Menu and game buttons use PNG icons with alpha transparency:
+```
+webos/
+├── menu-up.png, menu-down.png        # Menu UP/DOWN navigation
+├── menu-forward.png, menu-backward.png  # Menu LEFT/RIGHT navigation
+├── control-circle.png                # Menu OK button (PlayStation O)
+├── control-cross.png                 # Menu BACK button (PlayStation X)
+├── control-triangle.png, control-square.png  # Game action buttons
+```
+
+Icons are loaded at init via `load_icon_png()` using libpng, stored as RGBA pixel data, and blitted with alpha blending to RGB565 surface. The `blit_icon()` function handles scaling and per-pixel alpha blending.
+
+### Control Opacity
+In-game controls use 60% opacity for both borders and pressed highlights:
+```c
+#define BORDER_ALPHA 153    /* 60% of 255 */
+#define PRESSED_ALPHA 153   /* 60% of 255 */
+```
+Colors are alpha-blended per-pixel in `draw_rect_with_alpha()` and `draw_rect_outline_alpha()`.
 
 ### Menu Integration
 The menu system uses `PBTN_*` constants from `libpicofe/input.h`:
@@ -268,3 +338,93 @@ basic_text_out16_nf(pixels, w, x, y, "Loading...");  // From libpicofe/fonts.h
 SDL_Flip(plat_sdl_screen);
 ```
 Call from `menu.c` in `run_cd_image()` before heavy loading operations.
+
+### Menu Button Input Handling
+
+The menu system in libpicofe uses `in_menu_wait()` which polls for input with timeouts and auto-repeat logic. Touch input requires special handling to work correctly with this model.
+
+**Problem**: Touch events are instantaneous, but the menu expects sustained key states. Various approaches were tested:
+
+| Approach | Description | Result |
+|----------|-------------|--------|
+| One-shot | Set pending buttons on press, clear after read | Unreliable - timing issues |
+| MinHold | Hold buttons active for 150ms after release | Works but feels sluggish |
+| Debounce | 250ms cooldown between presses | Prevents rapid navigation |
+| Queue | Buffer events, return one at a time | Good but complex |
+| KeyInject | Inject KEY_DOWN on press, KEY_UP on release | Timing issues, stuck keys |
+| **TapKey** | Inject complete keystroke on tap | **Best - recommended** |
+
+**Recommended Solution (TapKey)**:
+Each tap immediately injects a complete keystroke (KEY_DOWN + KEY_UP). No state tracking needed - one tap = one menu action.
+
+```c
+static void inject_key_event(SDLKey key, int pressed)
+{
+    SDL_Event event;
+    memset(&event, 0, sizeof(event));
+    event.type = pressed ? SDL_KEYDOWN : SDL_KEYUP;
+    event.key.state = pressed ? SDL_PRESSED : SDL_RELEASED;
+    event.key.keysym.sym = key;
+    SDL_PushEvent(&event);
+}
+
+// In webos_touch_event(), on SDL_MOUSEBUTTONDOWN in menu mode:
+if (menu_mode && zone >= 0) {
+    SDLKey sdlkey = menu_key_to_sdlkey(zones[zone].key);
+    if (sdlkey != SDLK_UNKNOWN) {
+        inject_key_event(sdlkey, 1);  /* KEY_DOWN */
+        inject_key_event(sdlkey, 0);  /* KEY_UP */
+    }
+}
+```
+
+This approach is simpler and more reliable than tracking press/release separately:
+- No state synchronization issues
+- No stuck keys possible
+- No timing-dependent behavior
+- Each tap produces exactly one menu action
+
+**Menu Key Mapping**:
+```c
+MENU_KEY_UP    -> SDLK_UP     -> PBTN_UP
+MENU_KEY_DOWN  -> SDLK_DOWN   -> PBTN_DOWN
+MENU_KEY_LEFT  -> SDLK_LEFT   -> PBTN_LEFT
+MENU_KEY_RIGHT -> SDLK_RIGHT  -> PBTN_RIGHT
+MENU_KEY_MOK   -> SDLK_RETURN -> PBTN_MOK
+MENU_KEY_MBACK -> SDLK_ESCAPE -> PBTN_MBACK
+```
+
+**Mode Switching**:
+When switching between game and menu modes, flush stale touch events:
+```c
+while (SDL_PeepEvents(&event, 1, SDL_GETEVENT,
+       SDL_EVENTMASK(SDL_MOUSEBUTTONDOWN) |
+       SDL_EVENTMASK(SDL_MOUSEBUTTONUP) |
+       SDL_EVENTMASK(SDL_MOUSEMOTION)) > 0) {
+    /* discard */
+}
+```
+
+## Development Notes
+
+### Quick Build & Install Cycle
+```bash
+# Remove old package, rebuild, and install
+palm-install -r com.starkka.pcsxrearmed 2>/dev/null
+rm -f webos/pcsx  # Force fresh binary copy
+CROSS_COMPILE=arm-linux-gnueabi- ./webos-package.sh
+palm-install com.starkka.pcsxrearmed_*.ipk
+```
+
+### Debugging on Device
+View app logs via novaterm or SSH:
+```bash
+# On device
+tail -f /var/log/messages | grep -i pcsx
+```
+
+### Test Variants
+The `menu_test_variants/` directory contains alternative implementations of `in_webos_touch.c` for testing different menu button approaches (MinHold, Debounce, Queue, SyncPoll, KeyInject). Use `build_menu_variants.sh` to build all variants with unique app IDs for side-by-side comparison. Note: The current implementation uses TapKey which supersedes all these approaches.
+
+### Default Browse Directory
+The file browser defaults to `/media/internal/.pcsx` with fallbacks to `/media/internal` then `/media`. This is configured in `frontend/menu.c` in the `menu_do_last_cd_img()` function.

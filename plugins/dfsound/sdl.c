@@ -37,7 +37,7 @@ static void SOUND_FillAudio(void *unused, Uint8 *stream, int len) {
 		--len;
 	}
 
-	// Fill remaining space with zero
+	// Fill remaining space with silence
 	while (len > 0) {
 		*p++ = 0;
 		--len;
@@ -60,10 +60,24 @@ static void DestroySDL() {
 	}
 }
 
+static int sdl_audio_opened = 0;
+
 static int sdl_init(void) {
 	SDL_AudioSpec				spec;
 
 	if (pSndBuffer != NULL) return -1;
+
+	/* If audio is already open, just reinitialize the buffer */
+	if (sdl_audio_opened) {
+		SDL_PauseAudio(1);
+		iBufSize = BUFFER_SIZE;
+		pSndBuffer = (short *)malloc(iBufSize * sizeof(short));
+		if (pSndBuffer == NULL) return -1;
+		iReadPos = 0;
+		iWritePos = 0;
+		SDL_PauseAudio(0);
+		return 0;
+	}
 
 	InitSDL();
 
@@ -78,11 +92,13 @@ static int sdl_init(void) {
 		return -1;
 	}
 
+	sdl_audio_opened = 1;
 	iBufSize = BUFFER_SIZE;
 
 	pSndBuffer = (short *)malloc(iBufSize * sizeof(short));
 	if (pSndBuffer == NULL) {
 		SDL_CloseAudio();
+		sdl_audio_opened = 0;
 		return -1;
 	}
 
@@ -96,8 +112,9 @@ static int sdl_init(void) {
 static void sdl_finish(void) {
 	if (pSndBuffer == NULL) return;
 
-	SDL_CloseAudio();
-	DestroySDL();
+	/* Just pause audio and free buffer, don't close SDL audio device
+	 * to avoid double-free issues in some SDL configurations */
+	SDL_PauseAudio(1);
 
 	free(pSndBuffer);
 	pSndBuffer = NULL;
